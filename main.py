@@ -1,13 +1,17 @@
 import functools
 import time
+
+from settings import TOKEN  # Здесь надо импортировать токен бота
 from telegram import Update
 from telegram.ext import Updater, CallbackContext, CommandHandler, MessageHandler, Filters
+from apscheduler.schedulers.background import BackgroundScheduler
 from log import get_logger
-from settings import TOKEN  # Здесь надо импортировать токен бота
-from quickstart import calendar
 
+
+scheduler = BackgroundScheduler()
 
 logger = get_logger(__name__)  # TODO переделать file_handler, обновление по месяцам
+
 
 
 def log_action(command):
@@ -46,6 +50,7 @@ def main() -> None:
     dispatcher.add_handler(CommandHandler('passkey', pass_key))
     dispatcher.add_handler(CommandHandler('wherekey', where_key))
     dispatcher.add_handler(CommandHandler('gethistory', get_history))
+    dispatcher.add_handler(CommandHandler('showevent', show_event))
 
     # На любой другой текст выдаем сообщение help
     dispatcher.add_handler(MessageHandler(Filters.text, do_help))
@@ -143,6 +148,8 @@ def do_help(update: Update, context: CallbackContext) -> None:
              f'/passkey - я запишу, что ты сдал ключ на вахту\n'
              f'/wherekey - я расскажу, у кого ключ\n'
              f'/gethistory - я расскажу, кто последний брал ключ\n'
+             f'/gethistory - я расскажу, кто последний брал ключ\n'
+             f'/showevent - я расскажу, какие события намечаются\n'
     )
 
 
@@ -153,6 +160,12 @@ def two_hour_remind(update: Update, context: CallbackContext) -> None:
     while context.chat_data['key_taken'] == True:
         update.message.reply_text(reply)
         time.sleep(8)
+
+
+@log_action
+def show_event(update: Update, context: CallbackContext) -> None:
+    # TODO команда вызова календаря
+    pass
 
 
 if __name__ == '__main__':
