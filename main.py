@@ -53,7 +53,7 @@ def main() -> None:
     dispatcher.add_handler(CommandHandler('wherekey', where_key))
     dispatcher.add_handler(CommandHandler('gethistory', get_history))
     dispatcher.add_handler(CommandHandler('showevent', show_event))
-    job_queue.run_repeating(callback_minute, interval=60, first=10)
+    job_queue.run_repeating(callback_minute, interval=20, first=10)
 
     # На любой другой текст выдаем сообщение help
     dispatcher.add_handler(MessageHandler(Filters.text, do_help))
@@ -85,7 +85,6 @@ def take_key(update: Update, context: CallbackContext) -> None:
     reply = f'Ключ взял {user.first_name} {user.last_name}'
     logger.debug(reply)
     update.message.reply_text(text=reply)
-    two_hour_remind(update, context)  # Запускаем функцию напоминаний
 
 
 @log_action
@@ -160,7 +159,7 @@ def two_hour_remind(update: Update, context: CallbackContext) -> None:
     user = update.message.from_user
     reply = f'Эй, {user.first_name} {user.last_name}, не забыл сдать ключ?'
     time.sleep(8)  # Это чтобы не напоминал сдать ключ сразу после команды "takekey"
-    while context.chat_data['key_taken'] == True:
+    if context.chat_data['key_taken'] == True:
         update.message.reply_text(reply)
         time.sleep(8)
 
@@ -173,9 +172,11 @@ def show_event(update: Update, context: CallbackContext) -> None:
 
 @log_action
 def callback_minute(context: CallbackContext):
-    context.bot.send_message(chat_id=1627741936,
-                             text='One message every minute')
+    if context.chat_data['key_taken']:
+        context.bot.send_message(chat_id=1627741936,
+                                text='One message every minute')
 
 
 if __name__ == '__main__':
     main()
+    
