@@ -7,7 +7,6 @@ from telegram.ext import Updater, CallbackContext, CommandHandler, MessageHandle
 from apscheduler.schedulers.background import BackgroundScheduler
 from log import get_logger
 
-
 scheduler = BackgroundScheduler()
 logger = get_logger(__name__)  # TODO переделать file_handler, обновление по месяцам
 
@@ -46,6 +45,7 @@ def main() -> None:
     updater = Updater(token=TOKEN)
     dispatcher = updater.dispatcher
     job_queue: JobQueue = updater.job_queue
+    job_queue.set_dispatcher(dispatcher)
 
     # Добавляем обработчики команд
     dispatcher.add_handler(CommandHandler('takekey', take_key))
@@ -53,7 +53,7 @@ def main() -> None:
     dispatcher.add_handler(CommandHandler('wherekey', where_key))
     dispatcher.add_handler(CommandHandler('gethistory', get_history))
     dispatcher.add_handler(CommandHandler('showevent', show_event))
-    job_queue.run_repeating(callback_minute, interval=20, first=10)
+
 
     # На любой другой текст выдаем сообщение help
     dispatcher.add_handler(MessageHandler(Filters.text, do_help))
@@ -85,6 +85,7 @@ def take_key(update: Update, context: CallbackContext) -> None:
     reply = f'Ключ взял {user.first_name} {user.last_name}'
     logger.debug(reply)
     update.message.reply_text(text=reply)
+    context.job_queue.run_repeating(callback_minute, interval=20, first=10, context=context)
 
 
 @log_action
@@ -172,11 +173,14 @@ def show_event(update: Update, context: CallbackContext) -> None:
 
 @log_action
 def callback_minute(context: CallbackContext):
+    context.bot.send_message(chat_id=1627741936,
+                             text=context.job)
+
     if context.chat_data['key_taken']:
         context.bot.send_message(chat_id=1627741936,
-                                text='One message every minute')
+                                 text='One message every minute')
 
 
 if __name__ == '__main__':
     main()
-    
+
