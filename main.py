@@ -44,11 +44,12 @@ def main() -> None:
     """
     updater = Updater(token=TOKEN)
     dispatcher = updater.dispatcher
-    job_queue: JobQueue = updater.job_queue
+    #job_queue: JobQueue = updater.job_queue
+    job_queue = JobQueue()
     job_queue.set_dispatcher(dispatcher)
 
     # Добавляем обработчики команд
-    dispatcher.add_handler(CommandHandler('takekey', take_key))
+    dispatcher.add_handler(CommandHandler('takekey', take_key, pass_job_queue=True))
     dispatcher.add_handler(CommandHandler('passkey', pass_key))
     dispatcher.add_handler(CommandHandler('wherekey', where_key))
     dispatcher.add_handler(CommandHandler('gethistory', get_history))
@@ -60,6 +61,7 @@ def main() -> None:
 
     # Запускаем бота
     updater.start_polling()
+    job_queue.start()
     logger.info('auditory_bot успешно запустился')
     updater.idle()  # Это нужно, чтобы сразу не завершился
 
@@ -85,8 +87,9 @@ def take_key(update: Update, context: CallbackContext) -> None:
     reply = f'Ключ взял {user.first_name} {user.last_name}'
     logger.debug(reply)
     update.message.reply_text(text=reply)
-    context.job_queue.run_repeating(callback_minute, interval=20, first=10, context=context)
-
+    #context.job_queue.run_repeating(callback_minute(context), interval=20, first=10)
+    #job_queue.run_repeating(callback_minute, interval=10)
+    
 
 @log_action
 def pass_key(update: Update, context: CallbackContext) -> None:
@@ -172,15 +175,14 @@ def show_event(update: Update, context: CallbackContext) -> None:
 
 
 @log_action
-def callback_minute(context: CallbackContext):
-    context.bot.send_message(chat_id=1627741936,
-                             text=context.job)
+def callback_minute(update: Update, context: CallbackContext):
+    #context.bot.send_message(chat_id=1627741936,
+                             #text=context.job)
 
-    if context.chat_data['key_taken']:
-        context.bot.send_message(chat_id=1627741936,
-                                 text='One message every minute')
+
+    update.message.reply_text(chat_id=1627741936,
+                             text='One message every minute')
 
 
 if __name__ == '__main__':
     main()
-
