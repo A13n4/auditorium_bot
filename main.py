@@ -49,7 +49,7 @@ def main() -> None:
     job_queue.set_dispatcher(dispatcher)
 
     # Добавляем обработчики команд
-    dispatcher.add_handler(CommandHandler('takekey', take_key, pass_job_queue=True))
+    dispatcher.add_handler(CommandHandler('takekey', take_key))
     dispatcher.add_handler(CommandHandler('passkey', pass_key))
     dispatcher.add_handler(CommandHandler('wherekey', where_key))
     dispatcher.add_handler(CommandHandler('gethistory', get_history))
@@ -87,9 +87,10 @@ def take_key(update: Update, context: CallbackContext) -> None:
     reply = f'Ключ взял {user.first_name} {user.last_name}'
     logger.debug(reply)
     update.message.reply_text(text=reply)
-    #context.job_queue.run_repeating(callback_minute(context), interval=20, first=10)
-    #job_queue.run_repeating(callback_minute, interval=10)
-    
+    context.job_queue.run_repeating(callback_minute, 20, first=10)
+    update.message.reply_text(text=str(context.job_queue.jobs()))
+    # job_queue.run_repeating(callback_minute, interval=10)
+
 
 @log_action
 def pass_key(update: Update, context: CallbackContext) -> None:
@@ -175,13 +176,9 @@ def show_event(update: Update, context: CallbackContext) -> None:
 
 
 @log_action
-def callback_minute(update: Update, context: CallbackContext):
-    #context.bot.send_message(chat_id=1627741936,
-                             #text=context.job)
-
-
-    update.message.reply_text(chat_id=1627741936,
-                             text='One message every minute')
+def callback_minute(context: CallbackContext):
+    context.bot.send_message(chat_id=1627741936,
+                             text='Hello')
 
 
 if __name__ == '__main__':
