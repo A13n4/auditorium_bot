@@ -2,8 +2,8 @@ import functools
 import time
 
 from settings import TOKEN  # Здесь надо импортировать токен бота
-from telegram import Update
-from telegram.ext import Updater, CallbackContext, CommandHandler, MessageHandler, Filters, JobQueue
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CallbackContext, CommandHandler, MessageHandler, Filters, JobQueue, CallbackQueryHandler
 from apscheduler.schedulers.background import BackgroundScheduler
 from log import get_logger
 
@@ -54,6 +54,9 @@ def main() -> None:
     dispatcher.add_handler(CommandHandler('wherekey', where_key))
     dispatcher.add_handler(CommandHandler('gethistory', get_history))
     dispatcher.add_handler(CommandHandler('showevent', show_event))
+    dispatcher.add_handler(CommandHandler('don_touch', don_touch))
+    dispatcher.add_handler(CallbackQueryHandler(button))
+
 
 
     # На любой другой текст выдаем сообщение help
@@ -110,6 +113,8 @@ def pass_key(update: Update, context: CallbackContext) -> None:
     update.message.reply_text(text=reply)
 
 
+
+
 @log_action
 def where_key(update: Update, context: CallbackContext) -> None:
     """Пишет в чат, у кого ключ, исходя из информации, записанной в контексте беседы:
@@ -157,6 +162,8 @@ def do_help(update: Update, context: CallbackContext) -> None:
              f'/gethistory - я расскажу, кто последний брал ключ\n'
              f'/gethistory - я расскажу, кто последний брал ключ\n'
              f'/showevent - я расскажу, какие события намечаются\n'
+             f'/don_touch - я расскажу, какие события намечаются\n'
+
     )
 
 
@@ -181,5 +188,55 @@ def callback_minute(context: CallbackContext):
                              text='Hello')
 
 
+@log_action
+def don_touch(update: Update, context: CallbackContext):
+    button_list = [
+        InlineKeyboardButton("Пульт", callback_data="ПУЛЬТ"),
+        InlineKeyboardButton("Прожектора", callback_data="ПРОЖЕКТОРА"),
+    ]
+    reply_markup = InlineKeyboardMarkup(build_menu(button_list, n_cols=2))
+    context.bot.send_message(chat_id=1627741936, text="Выберете, что нельзя трогать: ", reply_markup=reply_markup)
+
+
+
+@log_action
+def build_menu(buttons, n_cols,
+               header_buttons=None,
+               footer_buttons=None):
+    menu = [buttons[i:i + n_cols] for i in range(0, len(buttons), n_cols)]
+    if header_buttons:
+        menu.insert(0, [header_buttons])
+    if footer_buttons:
+       menu.append([footer_buttons])
+    return menu
+
+
+def button(update, context: CallbackContext):
+    query = update.callback_query
+    variant = query.data
+    query.answer()
+    query.edit_message_text(text=f"Выбранный вариант: {variant}")
+    if variant == "ПУЛЬТ":
+        don_touch_controller(context)
+    elif variant == "ПРОЖЕКТОРА":
+        pass
+    elif variant == "СЦЕНЫ":
+        context.bot.send_message(chat_id=1627741936, text="Введите номера сцен через пробел: ")
+        fix_scenes = 5
+        print(fix_scenes)
+    elif variant == "ПРОГРАММЫ":
+        pass
+
+
+def don_touch_controller(context: CallbackContext):
+    button_list = [
+        InlineKeyboardButton("Сцены", callback_data="СЦЕНЫ"),
+        InlineKeyboardButton("Программы", callback_data="ПРОГРАММЫ"),
+    ]
+    reply_markup = InlineKeyboardMarkup(build_menu(button_list, n_cols=2))
+    context.bot.send_message(chat_id=1627741936, text="Выберете, что нельзя трогать: ", reply_markup=reply_markup)
+
+
 if __name__ == '__main__':
     main()
+
