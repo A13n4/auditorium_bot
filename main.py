@@ -3,7 +3,8 @@ import time
 
 from settings import TOKEN  # Здесь надо импортировать токен бота
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CallbackContext, CommandHandler, MessageHandler, Filters, JobQueue, CallbackQueryHandler
+from telegram.ext import Updater, CallbackContext, CommandHandler, MessageHandler, Filters, JobQueue, \
+    CallbackQueryHandler
 from apscheduler.schedulers.background import BackgroundScheduler
 from log import get_logger
 
@@ -44,7 +45,7 @@ def main() -> None:
     """
     updater = Updater(token=TOKEN)
     dispatcher = updater.dispatcher
-    #job_queue: JobQueue = updater.job_queue
+    # job_queue: JobQueue = updater.job_queue
     job_queue = JobQueue()
     job_queue.set_dispatcher(dispatcher)
 
@@ -57,8 +58,6 @@ def main() -> None:
     dispatcher.add_handler(CommandHandler('don_touch', don_touch))
     dispatcher.add_handler(CallbackQueryHandler(button))
 
-
-
     # На любой другой текст выдаем сообщение help
     dispatcher.add_handler(MessageHandler(Filters.text, do_help))
 
@@ -67,6 +66,19 @@ def main() -> None:
     job_queue.start()
     logger.info('auditory_bot успешно запустился')
     updater.idle()  # Это нужно, чтобы сразу не завершился
+
+
+
+def remove_job_if_exists(name: str, context: CallbackContext) -> bool:
+    """Удаляет задание с указанным именем. Возвращает, было ли задание удалено."""
+    print(name)
+    current_jobs = context.job_queue.get_jobs_by_name(name)
+    print(current_jobs)
+    if not current_jobs:
+        return False
+    for job in current_jobs:
+        job.schedule_removal()
+    return True
 
 
 @log_action
@@ -90,9 +102,11 @@ def take_key(update: Update, context: CallbackContext) -> None:
     reply = f'Ключ взял {user.first_name} {user.last_name}'
     logger.debug(reply)
     update.message.reply_text(text=reply)
-    context.job_queue.run_repeating(callback_minute, 20, first=10)
-    update.message.reply_text(text=str(context.job_queue.jobs()))
-    # job_queue.run_repeating(callback_minute, interval=10)
+    context.job_queue.run_repeating(callback_minute, 10, first=5)
+    #update.message.reply_text(text=str(context.job_queue.jobs()))
+    name = str(context.job_queue.jobs())
+    print(name)
+    print(context.job_queue.get_jobs_by_name(name), 'take')
 
 
 @log_action
@@ -111,8 +125,9 @@ def pass_key(update: Update, context: CallbackContext) -> None:
     reply = f'Ключ сдал {user.first_name} {user.last_name}'
     logger.debug(reply)
     update.message.reply_text(text=reply)
-
-
+    name = context.job_queue.jobs()
+    print(name)
+    print(remove_job_if_exists(name, context))
 
 
 @log_action
@@ -198,7 +213,6 @@ def don_touch(update: Update, context: CallbackContext):
     context.bot.send_message(chat_id=1627741936, text="Выберете, что нельзя трогать: ", reply_markup=reply_markup)
 
 
-
 @log_action
 def build_menu(buttons, n_cols,
                header_buttons=None,
@@ -207,11 +221,11 @@ def build_menu(buttons, n_cols,
     if header_buttons:
         menu.insert(0, [header_buttons])
     if footer_buttons:
-       menu.append([footer_buttons])
+        menu.append([footer_buttons])
     return menu
 
 
-def button(update, context: CallbackContext):
+def button(update: Update, context: CallbackContext):
     query = update.callback_query
     variant = query.data
     query.answer()
@@ -222,7 +236,8 @@ def button(update, context: CallbackContext):
         pass
     elif variant == "СЦЕНЫ":
         context.bot.send_message(chat_id=1627741936, text="Введите номера сцен через пробел: ")
-        fix_scenes = 5
+        fixed = 111
+        fix_scenes = 4
         print(fix_scenes)
     elif variant == "ПРОГРАММЫ":
         pass
