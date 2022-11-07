@@ -1,3 +1,5 @@
+
+
 import functools
 import time
 
@@ -57,8 +59,6 @@ def main() -> None:
     dispatcher.add_handler(CommandHandler('fix', fix))
     dispatcher.add_handler(CallbackQueryHandler(button))
 
-
-
     # На любой другой текст выдаем сообщение help
     dispatcher.add_handler(MessageHandler(Filters.text, do_help))
 
@@ -67,6 +67,20 @@ def main() -> None:
     job_queue.start()
     logger.info('auditory_bot успешно запустился')
     updater.idle()  # Это нужно, чтобы сразу не завершился
+
+
+def remove_job_if_exists(context):
+    """
+       Удаляет задание с заданным именем.
+       Возвращает, было ли задание удалено
+    """
+    current_jobs = context.job_queue.jobs()
+
+    if not current_jobs:
+        return False
+    for job in current_jobs:
+        job.schedule_removal()
+    return True
 
 
 @log_action
@@ -91,6 +105,8 @@ def take_key(update: Update, context: CallbackContext) -> None:
     logger.debug(reply)
     update.message.reply_text(text=reply)
     context.job_queue.run_repeating(callback_minute, 20, first=10)
+    name = context.job_queue.jobs()
+    print(name)
     update.message.reply_text(text=str(context.job_queue.jobs()))
     # job_queue.run_repeating(callback_minute, interval=10)
 
@@ -111,8 +127,7 @@ def pass_key(update: Update, context: CallbackContext) -> None:
     reply = f'Ключ сдал {user.first_name} {user.last_name}'
     logger.debug(reply)
     update.message.reply_text(text=reply)
-
-
+    remove_job_if_exists(context)
 
 
 @log_action
@@ -137,9 +152,9 @@ def where_key(update: Update, context: CallbackContext) -> None:
 
 @log_action
 def get_history(update: Update, context: CallbackContext) -> None:
-    """Возвращает в чат историю путешествия ключа по рукам
-    :param update: обновление из Telegram, новое для каждого сообщения
-    :param context: контекст беседы, из которой прилетело сообщение. Не меняется при новом сообщении
+    """Возвращает в чат историю путешествия ключа по рукам.
+    :param update: обновление из Telegram, новое для каждого сообщения.
+    :param context: контекст беседы, из которой прилетело сообщение. Не меняется при новом сообщении.
     :return: None
     """
     update.message.reply_text(text='С этим пока трудности, работаем...')
@@ -195,8 +210,7 @@ def fix(update: Update, context: CallbackContext):
         InlineKeyboardButton("Прожектора", callback_data="ПРОЖЕКТОРА"),
     ]
     reply_markup = InlineKeyboardMarkup(build_menu(button_list, n_cols=2))
-    context.bot.send_message(chat_id=1627741936, text="Выберете, что нельзя трогать: ", reply_markup=reply_markup)
-
+    context.bot.send_message(chat_id=1627741936, text="Выберите, что нельзя трогать: ", reply_markup=reply_markup)
 
 
 @log_action
@@ -207,7 +221,7 @@ def build_menu(buttons, n_cols,
     if header_buttons:
         menu.insert(0, [header_buttons])
     if footer_buttons:
-       menu.append([footer_buttons])
+        menu.append([footer_buttons])
     return menu
 
 
