@@ -1,12 +1,11 @@
-import functools
-import time
+import functools, json
 
 from settings import TOKEN  # Здесь надо импортировать токен бота
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CallbackContext, CommandHandler, MessageHandler, Filters, JobQueue, \
-    CallbackQueryHandler
+from telegram.ext import Updater, CallbackContext, CommandHandler, MessageHandler, Filters, JobQueue, CallbackQueryHandler
 from apscheduler.schedulers.background import BackgroundScheduler
 from log import get_logger
+
 
 scheduler = BackgroundScheduler()
 logger = get_logger(__name__)  # TODO переделать file_handler, обновление по месяцам
@@ -38,14 +37,21 @@ def main() -> None:
     """
     Создает и запускает бота для Актового зала
     Команды, которые понимает бот:
+        /help - написать, что умеет бот
         /takekey - записать ключ на пользователя
         /passkey - сдать ключ на вахту
         /wherekey - рассказать, у кого ключ в данный момент
         /gethistory - в разработке
+        /fix - записать в список то, что лучше не трогать
+        /isfixed - написать список в чат
+        /unfix - удалить что-то из списка
     """
+
+    global flag
+    flag = 0
+
     updater = Updater(token=TOKEN)
     dispatcher = updater.dispatcher
-    # job_queue: JobQueue = updater.job_queue
     job_queue = JobQueue()
     job_queue.set_dispatcher(dispatcher)
 
@@ -54,8 +60,11 @@ def main() -> None:
     dispatcher.add_handler(CommandHandler('passkey', pass_key))
     dispatcher.add_handler(CommandHandler('wherekey', where_key))
     dispatcher.add_handler(CommandHandler('gethistory', get_history))
-    dispatcher.add_handler(CommandHandler('showevent', show_event))
-    dispatcher.add_handler(CommandHandler('don_touch', don_touch))
+    dispatcher.add_handler(CommandHandler('help', do_help))
+    dispatcher.add_handler(CommandHandler('fix', fix))
+    dispatcher.add_handler(CommandHandler('isfixed', isfix))
+    dispatcher.add_handler(CommandHandler('unfix', unfix))
+    dispatcher.add_handler(MessageHandler(Filters.update, waiting_func))
     dispatcher.add_handler(CallbackQueryHandler(button))
 
     # На любой другой текст выдаем сообщение help
@@ -66,19 +75,6 @@ def main() -> None:
     job_queue.start()
     logger.info('auditory_bot успешно запустился')
     updater.idle()  # Это нужно, чтобы сразу не завершился
-
-
-
-def remove_job_if_exists(name: str, context: CallbackContext) -> bool:
-    """Удаляет задание с указанным именем. Возвращает, было ли задание удалено."""
-    print(name)
-    current_jobs = context.job_queue.get_jobs_by_name(name)
-    print(current_jobs)
-    if not current_jobs:
-        return False
-    for job in current_jobs:
-        job.schedule_removal()
-    return True
 
 
 @log_action
@@ -99,14 +95,20 @@ def take_key(update: Update, context: CallbackContext) -> None:
     context.chat_data['user_id'] = user.id
     context.chat_data['user'] = f'{user.first_name} {user.last_name}'
     # TODO Вынести получение имени и фамилии в отдельную функцию. Нужен фильтр, если фамилия None
+
+    # Если fixed_items.json не пустой, отправляем в чат содержимое
+    itms = get_fixed()
+
+    flight = itms[0]
+    fscenes = itms[1]
+
+    if len(flight) > 0 or len(fscenes) > 0:
+        isfix(update, context)
+
     reply = f'Ключ взял {user.first_name} {user.last_name}'
     logger.debug(reply)
     update.message.reply_text(text=reply)
-    context.job_queue.run_repeating(callback_minute, 10, first=5)
-    #update.message.reply_text(text=str(context.job_queue.jobs()))
-    name = str(context.job_queue.jobs())
-    print(name)
-    print(context.job_queue.get_jobs_by_name(name), 'take')
+    context.job_queue.run_repeating(callback_minute, 5, first=5)
 
 
 @log_action
@@ -121,13 +123,10 @@ def pass_key(update: Update, context: CallbackContext) -> None:
     context.chat_data.clear()
     context.chat_data['key_taken'] = False
     # TODO учесть случай, когда сдает не тот, кто взял
-
     reply = f'Ключ сдал {user.first_name} {user.last_name}'
     logger.debug(reply)
     update.message.reply_text(text=reply)
-    name = context.job_queue.jobs()
-    print(name)
-    print(remove_job_if_exists(name, context))
+    remove_job_if_exists(context)
 
 
 @log_action
@@ -152,9 +151,9 @@ def where_key(update: Update, context: CallbackContext) -> None:
 
 @log_action
 def get_history(update: Update, context: CallbackContext) -> None:
-    """Возвращает в чат историю путешествия ключа по рукам
-    :param update: обновление из Telegram, новое для каждого сообщения
-    :param context: контекст беседы, из которой прилетело сообщение. Не меняется при новом сообщении
+    """Возвращает в чат историю путешествия ключа по рукам.
+    :param update: обновление из Telegram, новое для каждого сообщения.
+    :param context: контекст беседы, из которой прилетело сообщение. Не меняется при новом сообщении.
     :return: None
     """
     update.message.reply_text(text='С этим пока трудности, работаем...')
@@ -175,42 +174,60 @@ def do_help(update: Update, context: CallbackContext) -> None:
              f'/passkey - я запишу, что ты сдал ключ на вахту\n'
              f'/wherekey - я расскажу, у кого ключ\n'
              f'/gethistory - я расскажу, кто последний брал ключ\n'
-             f'/gethistory - я расскажу, кто последний брал ключ\n'
-             f'/showevent - я расскажу, какие события намечаются\n'
-             f'/don_touch - я расскажу, какие события намечаются\n'
+             f'/fix - я запишу в список то, что лучше не трогать\n'
+             f'/unfix - я удалю что-то из этого списка\n'
+             f'/isfixed - я прочитаю список\n'
 
     )
 
 
-def two_hour_remind(update: Update, context: CallbackContext) -> None:
-    user = update.message.from_user
-    reply = f'Эй, {user.first_name} {user.last_name}, не забыл сдать ключ?'
-    time.sleep(8)  # Это чтобы не напоминал сдать ключ сразу после команды "takekey"
-    if context.chat_data['key_taken'] == True:
-        update.message.reply_text(reply)
-        time.sleep(8)
-
-
 @log_action
-def show_event(update: Update, context: CallbackContext) -> None:
-    # TODO команда вызова календаря
-    pass
+def fix(update, context: CallbackContext):
+    button_list = [
+        InlineKeyboardButton("Сцены", callback_data="СЦЕНЫ"),
+        InlineKeyboardButton("Прожектора", callback_data="ПРОЖЕКТОРА"),
+    ]
+    reply_markup = InlineKeyboardMarkup(build_menu(button_list, n_cols=2))
+    context.bot.send_message(chat_id=1627741936, text="Выберите:", reply_markup=reply_markup)
+
+
+def isfix(update, context: CallbackContext):
+
+    itms = get_fixed()
+
+    update.message.reply_text(
+        text=f'Прожектора:\n'
+            f"{' '.join(itms[0])}\n"
+            f'Сцены:\n'
+            f"{' '.join(itms[1])}\n"
+        )
+
+
+def unfix(update, context: CallbackContext):
+    global flag
+    flag = 1
+    fix(update, context)
 
 
 @log_action
 def callback_minute(context: CallbackContext):
+    # TODO обращение по имени
     context.bot.send_message(chat_id=1627741936,
-                             text='Hello')
+                             text= f"Кажется, кто-то не сдал ключ...")
 
 
-@log_action
-def don_touch(update: Update, context: CallbackContext):
-    button_list = [
-        InlineKeyboardButton("Пульт", callback_data="ПУЛЬТ"),
-        InlineKeyboardButton("Прожектора", callback_data="ПРОЖЕКТОРА"),
-    ]
-    reply_markup = InlineKeyboardMarkup(build_menu(button_list, n_cols=2))
-    context.bot.send_message(chat_id=1627741936, text="Выберете, что нельзя трогать: ", reply_markup=reply_markup)
+def remove_job_if_exists(context):
+    """
+       Удаляет задание с заданным именем.
+       Возвращает, было ли задание удалено
+    """
+    current_jobs = context.job_queue.jobs()
+
+    if not current_jobs:
+        return False
+    for job in current_jobs:
+        job.schedule_removal()
+    return True
 
 
 @log_action
@@ -225,31 +242,127 @@ def build_menu(buttons, n_cols,
     return menu
 
 
-def button(update: Update, context: CallbackContext):
+def button(update, context: CallbackContext):
+    # TODO стирать сообщения, чтобы не засорять чат
     query = update.callback_query
     variant = query.data
     query.answer()
-    query.edit_message_text(text=f"Выбранный вариант: {variant}")
-    if variant == "ПУЛЬТ":
-        don_touch_controller(context)
-    elif variant == "ПРОЖЕКТОРА":
-        pass
+
+    if variant == "ПРОЖЕКТОРА":
+        context.bot.send_message(chat_id=1627741936, text="Введите номера прожекторов через пробел: ")
+        context.chat_data['waiting for'] = 'light'
+
     elif variant == "СЦЕНЫ":
         context.bot.send_message(chat_id=1627741936, text="Введите номера сцен через пробел: ")
-        fixed = 111
-        fix_scenes = 4
-        print(fix_scenes)
-    elif variant == "ПРОГРАММЫ":
-        pass
+        context.chat_data['waiting for'] = 'scenes'
 
 
-def don_touch_controller(context: CallbackContext):
-    button_list = [
-        InlineKeyboardButton("Сцены", callback_data="СЦЕНЫ"),
-        InlineKeyboardButton("Программы", callback_data="ПРОГРАММЫ"),
-    ]
-    reply_markup = InlineKeyboardMarkup(build_menu(button_list, n_cols=2))
-    context.bot.send_message(chat_id=1627741936, text="Выберете, что нельзя трогать: ", reply_markup=reply_markup)
+def waiting_func(update, context):
+    if context.chat_data.get('waiting for') == 'light':
+        change_light(update, context)
+    if context.chat_data.get('waiting for') == 'scenes':
+        change_scenes(update, context)
+
+
+def get_fixed():
+    with open('fixed', 'r', encoding='utf-8') as file:
+        json.load(file)
+        print(file["light"])
+        return 0
+
+
+def change_light(update, context: CallbackContext):
+    global flag
+
+    if flag == 1:  # пользователь хочет удалить значение
+
+        delete_from_fixed(update.message.text.split(), 0) # если 0 - то меняется свет
+        flag = 0
+
+    else:  # пользователь хочет добавить значение
+        write_in_fixed(update.message.text.split(), 0)  # если 0 - то меняется свет
+
+    update.message.reply_text(
+        text=f'Принято!\n\n'
+             f'Я напомню про это по команде:\n'
+             f'/isfixed\n'
+             f'И изменю список по команде:\n'
+             f'/unfix\n'
+
+    )
+
+
+def change_scenes(update, context: CallbackContext):
+    global flag
+
+    if flag == 1:  # пользователь хочет удалить значение
+
+        delete_from_fixed(update.message.text.split(), 1)   # если 1 - то меняются сцены
+        flag = 0
+
+    else:  # пользователь хочет добавить значение
+        write_in_fixed(update.message.text.split(), 1)  # если 1 - то меняются сцены
+
+    update.message.reply_text(
+        text=f'Принято!\n\n'
+             f'Я напомню про это по команде:\n'
+             f'/isfixed\n'
+             f'И уберу что-то из списка по команде:\n'
+             f'/unfix\n'
+
+    )
+
+
+def write_in_fixed(s, type):
+
+    itms = get_fixed()
+    print(itms)
+
+    flight = itms[0]
+    fscenes = itms[1]
+
+    result = {'light': flight, 'scenes': fscenes}
+    print(result, s)
+
+    if type == 0:    # если 0 - то меняется свет
+        result["light"] += s
+    if type == 1:   # если 1 - то меняются сцены
+        result["scenes"] += s
+
+    with open('fixed_items.json', 'w') as f:
+        json.dump(result, f)
+
+
+def delete_from_fixed(s, type):
+
+    itms = get_fixed()
+
+    flight = itms[0]
+    fscenes = itms[1]
+
+    if type == 0:    # если 0 - то меняется свет
+        for i in range(len(s)):
+            z = s[i]
+            flight.remove(z)
+
+    if type == 1:   # если 1 - то меняются сцены
+        for i in range(len(s)):
+            z = s[i]
+            fscenes.remove(z)
+
+    result = {'light': flight, 'scenes': fscenes}
+    print(result, s)
+
+    with open('fixed_items.json', 'w') as f:
+        json.dump(result, f)
+    pass
+
+
+def get_fixed():
+    with open('fixed_items.json') as f:
+        fixed = json.load(f)
+        return fixed["light"], fixed["scenes"]
+
 
 
 if __name__ == '__main__':
