@@ -112,7 +112,7 @@ def take_key(update: Update, context: CallbackContext) -> None:
     reply = f'Ключ взял {user.first_name} {user.last_name}'
     logger.debug(reply)
     update.message.reply_text(text=reply)
-    context.job_queue.run_repeating(callback_minute, 50, first=20)
+    context.job_queue.run_repeating(callback_minute, 60, first=50)
     global name
     name = str(user.first_name) + ' ' + str(user.last_name)
 
