@@ -47,8 +47,9 @@ def main() -> None:
         /unfix - удалить что-то из списка
     """
 
-    global flag
+    global flag, name
     flag = 0
+    name = ''
 
     updater = Updater(token=TOKEN)
     dispatcher = updater.dispatcher
@@ -84,6 +85,7 @@ def take_key(update: Update, context: CallbackContext) -> None:
     :param context: контекст беседы, из которой прилетело сообщение. Не меняется при новом сообщении
     :return: None
     """
+
     user = update.message.from_user
     if 'key_taken' not in context.chat_data:
         context.chat_data['key_taken'] = False
@@ -97,18 +99,22 @@ def take_key(update: Update, context: CallbackContext) -> None:
     # TODO Вынести получение имени и фамилии в отдельную функцию. Нужен фильтр, если фамилия None
 
     # Если fixed_items.json не пустой, отправляем в чат содержимое
+
     itms = get_fixed()
 
     flight = itms[0]
     fscenes = itms[1]
 
     if len(flight) > 0 or len(fscenes) > 0:
+        update.message.reply_text('Попросили кое-что не трогать: ')
         isfix(update, context)
 
     reply = f'Ключ взял {user.first_name} {user.last_name}'
     logger.debug(reply)
     update.message.reply_text(text=reply)
-    context.job_queue.run_repeating(callback_minute, 5, first=5)
+    context.job_queue.run_repeating(callback_minute, 50, first=20)
+    global name
+    name = str(user.first_name) + ' ' + str(user.last_name)
 
 
 @log_action
@@ -211,9 +217,9 @@ def unfix(update, context: CallbackContext):
 
 @log_action
 def callback_minute(context: CallbackContext):
-    # TODO обращение по имени
+    global name
     context.bot.send_message(chat_id=1627741936,
-                             text= f"Кажется, кто-то не сдал ключ...")
+                             text= f"{name}, не забудь сдать ключ на вахту!")
 
 
 def remove_job_if_exists(context):
@@ -267,7 +273,6 @@ def waiting_func(update, context):
 def get_fixed():
     with open('fixed', 'r', encoding='utf-8') as file:
         json.load(file)
-        print(file["light"])
         return 0
 
 
@@ -316,7 +321,6 @@ def change_scenes(update, context: CallbackContext):
 def write_in_fixed(s, type):
 
     itms = get_fixed()
-    print(itms)
 
     flight = itms[0]
     fscenes = itms[1]
@@ -351,7 +355,6 @@ def delete_from_fixed(s, type):
             fscenes.remove(z)
 
     result = {'light': flight, 'scenes': fscenes}
-    print(result, s)
 
     with open('fixed_items.json', 'w') as f:
         json.dump(result, f)
@@ -364,7 +367,5 @@ def get_fixed():
         return fixed["light"], fixed["scenes"]
 
 
-
 if __name__ == '__main__':
     main()
-
