@@ -47,7 +47,8 @@ def main() -> None:
         /unfix - удалить что-то из списка
     """
 
-    global flag, name
+    global flag, name, items_is_not_empty
+    items_is_not_empty = 0
     flag = 0
     name = ''
 
@@ -93,26 +94,27 @@ def take_key(update: Update, context: CallbackContext) -> None:
         reply = f'Ключ передал {context.chat_data["user"]}'
         logger.debug(reply)
         update.message.reply_text(text=reply)
+        remove_job_if_exists(context)
     context.chat_data['key_taken'] = True
     context.chat_data['user_id'] = user.id
     context.chat_data['user'] = f'{user.first_name} {user.last_name}'
     # TODO Вынести получение имени и фамилии в отдельную функцию. Нужен фильтр, если фамилия None
 
     # Если fixed_items.json не пустой, отправляем в чат содержимое
-
     itms = get_fixed()
 
     flight = itms[0]
     fscenes = itms[1]
 
     if len(flight) > 0 or len(fscenes) > 0:
-        update.message.reply_text('Попросили кое-что не трогать: ')
+        global items_is_not_empty
+        items_is_not_empty = 1
         isfix(update, context)
 
     reply = f'Ключ взял {user.first_name} {user.last_name}'
     logger.debug(reply)
     update.message.reply_text(text=reply)
-    context.job_queue.run_repeating(callback_minute, 60, first=50)
+    context.job_queue.run_repeating(callback_minute, 3600, first=1800, context=update.message.chat_id)
     global name
     name = str(user.first_name) + ' ' + str(user.last_name)
 
@@ -146,11 +148,11 @@ def where_key(update: Update, context: CallbackContext) -> None:
     """
     if context.chat_data['key_taken']:
         user = update.message.from_user
-        reply = f'Ключ взял {user.first_name} {user.last_name}'
+        reply = f"Ключ взял {context.chat_data['user']}"
         logger.debug(reply)
         update.message.reply_text(text=reply)
     else:
-        reply = f'Ключ на вахте'
+        reply = f"Ключ на вахте"
         logger.debug(reply)
         update.message.reply_text(text=reply)
 
@@ -194,19 +196,33 @@ def fix(update, context: CallbackContext):
         InlineKeyboardButton("Прожектора", callback_data="ПРОЖЕКТОРА"),
     ]
     reply_markup = InlineKeyboardMarkup(build_menu(button_list, n_cols=2))
-    context.bot.send_message(chat_id=1627741936, text="Выберите:", reply_markup=reply_markup)
+    context.bot.send_message(chat_id=update.effective_chat.id, text="Выберите:", reply_markup=reply_markup)
 
 
 def isfix(update, context: CallbackContext):
+    global items_is_not_empty
 
-    itms = get_fixed()
+    if  items_is_not_empty == 1:
+        itms = get_fixed()
 
-    update.message.reply_text(
-        text=f'Прожектора:\n'
-            f"{' '.join(itms[0])}\n"
-            f'Сцены:\n'
-            f"{' '.join(itms[1])}\n"
+        update.message.reply_text(
+            text=f'Попросили кое-что не трогать!\n'
+                 f'Прожектора:\n'
+                 f"{' '.join(itms[0])}\n"
+                 f'Сцены:\n'
+                 f"{' '.join(itms[1])}\n"
         )
+        items_is_not_empty = 0
+
+    else:
+        itms = get_fixed()
+
+        update.message.reply_text(
+            text=f'Прожектора:\n'
+                f"{' '.join(itms[0])}\n"
+                f'Сцены:\n'
+                f"{' '.join(itms[1])}\n"
+            )
 
 
 def unfix(update, context: CallbackContext):
@@ -218,7 +234,7 @@ def unfix(update, context: CallbackContext):
 @log_action
 def callback_minute(context: CallbackContext):
     global name
-    context.bot.send_message(chat_id=1627741936,
+    context.bot.send_message(chat_id=context.job.context,
                              text= f"{name}, не забудь сдать ключ на вахту!")
 
 
@@ -255,12 +271,13 @@ def button(update, context: CallbackContext):
     query.answer()
 
     if variant == "ПРОЖЕКТОРА":
-        context.bot.send_message(chat_id=1627741936, text="Введите номера прожекторов через пробел: ")
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Введите номера прожекторов через пробел: ")
         context.chat_data['waiting for'] = 'light'
 
     elif variant == "СЦЕНЫ":
-        context.bot.send_message(chat_id=1627741936, text="Введите номера сцен через пробел: ")
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Введите номера сцен через пробел: ")
         context.chat_data['waiting for'] = 'scenes'
+        change_scenes(update, context)
 
 
 def waiting_func(update, context):
@@ -270,22 +287,20 @@ def waiting_func(update, context):
         change_scenes(update, context)
 
 
-def get_fixed():
-    with open('fixed', 'r', encoding='utf-8') as file:
-        json.load(file)
-        return 0
-
-
 def change_light(update, context: CallbackContext):
     global flag
 
     if flag == 1:  # пользователь хочет удалить значение
 
-        delete_from_fixed(update.message.text.split(), 0) # если 0 - то меняется свет
+        delete_from_fixed(update.message.text.split(), 0)  # если 0 - то меняется свет
         flag = 0
+        context.chat_data['waiting for'] = ''
 
     else:  # пользователь хочет добавить значение
-        write_in_fixed(update.message.text.split(), 0)  # если 0 - то меняется свет
+        write_in_fixed(update.message.text.split(), 0) # если 0 - то меняется свет
+        context.chat_data['waiting for'] = ''
+
+
 
     update.message.reply_text(
         text=f'Принято!\n\n'
@@ -304,9 +319,11 @@ def change_scenes(update, context: CallbackContext):
 
         delete_from_fixed(update.message.text.split(), 1)   # если 1 - то меняются сцены
         flag = 0
+        context.chat_data['waiting for'] = ''
 
     else:  # пользователь хочет добавить значение
         write_in_fixed(update.message.text.split(), 1)  # если 1 - то меняются сцены
+        context.chat_data['waiting for'] = ''
 
     update.message.reply_text(
         text=f'Принято!\n\n'
@@ -319,6 +336,7 @@ def change_scenes(update, context: CallbackContext):
 
 
 def write_in_fixed(s, type):
+    print('write in fixed')
 
     itms = get_fixed()
 
@@ -326,7 +344,6 @@ def write_in_fixed(s, type):
     fscenes = itms[1]
 
     result = {'light': flight, 'scenes': fscenes}
-    print(result, s)
 
     if type == 0:    # если 0 - то меняется свет
         result["light"] += s
@@ -369,3 +386,4 @@ def get_fixed():
 
 if __name__ == '__main__':
     main()
+
