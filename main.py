@@ -277,7 +277,7 @@ def button(update, context: CallbackContext):
     elif variant == "СЦЕНЫ":
         context.bot.send_message(chat_id=update.effective_chat.id, text="Введите номера сцен через пробел: ")
         context.chat_data['waiting for'] = 'scenes'
-        change_scenes(update, context)
+    
 
 
 def waiting_func(update, context):
